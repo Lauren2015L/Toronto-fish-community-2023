@@ -6,11 +6,6 @@ output: html_document
 ---
 
 ---
-title: "Clean TRCA fish file"
-author: "Lauren Lawson"
-date: "2023-07-01"
-output: html_document
----
 #Packages
 ```{r setup, include=FALSE}
 library(readxl)
