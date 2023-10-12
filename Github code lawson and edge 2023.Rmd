@@ -1,10 +1,17 @@
 ---
+title: "R Code Lawson et al 2023 - Fish Communities"
+author: "Lauren Lawson"
+date: "2023-10-12"
+output: html_document
+---
+
+---
 title: "Clean TRCA fish file"
 author: "Lauren Lawson"
 date: "2023-07-01"
 output: html_document
 ---
-#Packages needed
+#Packages
 ```{r setup, include=FALSE}
 library(readxl)
 library(tidyverse)
@@ -23,29 +30,37 @@ library(sjmisc)
 library(ggplot2)
 ```
 
+
 #Temporal Beta Diversity Index
 ##Calculating Temporal Beta Diversity Index
 ```{r}
-#Calculates TBI using matrices from first time period and second time period
+#Calculates TBI using species by site matrix from first time period and second time period
 z <- TBI(pivot_first_m, pivot_last_m, method = "%difference", BCD = TRUE, nperm = 9999, test.BC = TRUE, pa.tr= FALSE) 
 
-#merging datasets to include station name
-Stations <- bcplot[,1]
+#writes in the names of the sites by assigning station names in alphabetical order which the matrices are organized in 
+letter.station <- substr(TBI.results$StationName, 1, 1)
 
-#creates table with TBI results (also see bcplot file)
+#merging datasets to include station name
+Stations <- first_last_fish[,1]
+Stations <- Stations %>% 
+  distinct()
+
+#creates table with TBI results
 TBI <- as.data.frame(z[[1]])
 p.TBI <- as.data.frame(z[[2]])
 BCD <- as.data.frame(z[[4]])
+p.adjusted <- as.data.frame(z[[3]])
 
 #binds to station names for TBI results 
-TBI.results <- cbind(Stations, TBI, p.TBI, BCD)
+TBI.results <- cbind(Stations, TBI, p.TBI, p.adjusted, BCD)
 
-#merge with the standardized data to create dataframe for LME modelling 
-TBI.predictors <- merge(TBI.results, trca_standardized, by = "Station")
+colnames(TBI.results) <- c("Station", "TBI", "p.TBI", "p.adjusted", "Losses", "Gains", "D=(B+C)/(2A+B+B)", "Change" )
+
+View(TBI.results)
 ```
 ##Plotting BC Plot based on TBI
 ```{r}
-#this plots the BC plot data with design features (added in watershed separately)
+#this plots the BC plot data with design features
 bcplot %>% 
   ggplot(aes(x= Loss, y = Gain, fill = Watershed, shape = Change, size = TBI, color = Watershed))
   + geom_point(alpha = .65, color = "black") +
@@ -79,7 +94,7 @@ bcplot %>%
 ###Temporal Beta Diversity
 ####Fixed effects models
 ```{r}
-#Global model
+#NO interactions global model
 m1 <- lmer(TBI ~  Urban.2000.UC + Percent.change.urban + Wetland.2000.UC+ Percent.change.wetland + Woodland.2000.UC + Percent.change.woodland + DCIs1980 + DCI.diff + (1|Watershed), REML = F, data = TBI.predictors)
 Cand.models[[1]] <- m1 
 
@@ -103,6 +118,8 @@ Cand.models[[5]] <- m5
 m6<- lmer(TBI ~   Woodland.2000.UC + Percent.change.woodland + (1|Watershed), REML = F, data = TBI.predictors)
 Cand.models[[6]] <- m6 
 
+#m7 <- lmer(TBI ~ (1|Watershed), REML = F, data = TBI.predictors)
+#Cand.models[[7]] <- m7
 
 Modnames <- paste("model", 1:length(Cand.models), sep = " ")
 aictab(cand.set = Cand.models, modnames = Modnames, sort = TRUE)
@@ -122,15 +139,14 @@ top.TBI.list <- list(top.tbi.6, top.tbi.5, top.tbi.4)
 #model averaging
 avg.tbi <- model.avg(top.TBI.list)
 
-#creating dataset with subset estimates to prep for ggplot plotting
+#creating dataset to plot nicely
 avg.tbi.coef <- as.data.frame(avg.tbi$coefficients)
 avg.tbi.coef <- avg.tbi.coef %>% 
   t()
 con.tbi <- confint(avg.tbi, full = F)
 beta <- cbind(avg.tbi.coef, con.tbi)
 beta<- as.data.frame(beta)
-#renaming the rows to look better
-rownames(beta) <- c("(Intercept)", "Woodland T1","Woodland loss %", "Wetland T1", "Weltand loss %", "Urban T1", "Urban Intensif. %")
+rownames(beta) <- c("(Intercept)", "Woodland T1","Woodland loss %", "Wetland T1", "Weltand loss %", "Anthro. T1", "Anthro. Intensif. %")
 beta <- cbind(Variable = rownames(beta), beta)
 colnames(beta) <- c("Variable", "Full", "Subset", "lower.con", "upper.con")
 
@@ -148,12 +164,12 @@ tbi.averaged.plot <- beta %>%
 
 tbi.averaged.plot
 ```
+
 ###Richness
 ####Fixed effects
 ```{r}
 Cand.models <- list()
 
-#full model
 m1 <- lmer(Rich.change ~  Urban.2000.UC + Percent.change.urban + Wetland.2000.UC+ Percent.change.wetland + Woodland.2000.UC + Percent.change.woodland + DCIs1980 + DCI.diff + (1|Watershed), REML = F, data = trca_standardized2)
 Cand.models[[1]] <- m1 
 
@@ -225,6 +241,7 @@ rich.averaged.plot <- k %>%
 
 rich.averaged.plot
 ```
+
 ###Evenness
 ####Fixed effects models
 ```{r}
@@ -254,6 +271,7 @@ Cand.models[[5]] <- m5
 m6<- lmer(Even.change ~   Woodland.2000.UC + Percent.change.woodland + (1|Watershed), REML = F, data = trca_standardized)
 Cand.models[[6]] <- m6 
 
+#AIC
 Modnames <- paste("model", 1:length(Cand.models), sep = " ")
 aictab(cand.set = Cand.models, modnames = Modnames, sort = TRUE)
 rich.aic <- as.data.frame.matrix(aictab(cand.set = Cand.models, modnames = Modnames, sort = TRUE),digits = 4, LL = TRUE)
@@ -275,7 +293,7 @@ avg.even.coef <- avg.even.coef %>%
 con.even <- confint(avg.even, full = F)
 e <- cbind(avg.even.coef, con.even)
 e<- as.data.frame(e)
-rownames(e) <- c("(Intercept)", "Wetland T1","Wetland loss %", "Woodland T1", "Woodland loss %", "Urban T1", "Urban Intensif. %")
+rownames(e) <- c("(Intercept)", "Wetland T1","Wetland loss %", "Woodland T1", "Woodland loss %", "Anthro. T1", "Anthro. Intensif. %")
 e <- cbind(Variable = rownames(e), e)
 colnames(e) <- c("Variable", "Full", "Subset", "lower.con", "upper.con")
 ```
@@ -294,6 +312,7 @@ even.averaged.plot <- e %>%
 
 even.averaged.plot
 ```
+
 ###Shan Diversity
 ####Fixed effects
 ```{r}
@@ -346,24 +365,24 @@ sum.shan <- model.avg(shan.top)
 sum.shan.coef <- as.data.frame(sum.shan$coefficients)
 sum.shan.coef <- sum.shan.coef %>% 
   t()
-#sum.shan
+
 #confidence intervals
 con <- confint(sum.shan, full = F) #these are the subset estimates
 #binding estimates and confidence intervals
 k <- cbind(sum.shan.coef, con)
 k <- as.data.frame(k)
 #renaming rows
-rownames(k) <- c("(Intercept)", "DCI T1","DCI Δ","Wetland T1", "Wetland loss %", "Urban T1", "Urban Intensif. %", "Woodland T1", "Woodland loss %")
+rownames(k) <- c("(Intercept)", "DCI T1","DCI Δ","Wetland T1", "Wetland loss %", "Anthro. T1", "Anthro. Intensif. %", "Woodland T1", "Woodland loss %")
 #making column for variables names
 k <- cbind(Variable = rownames(k), k)
 #renaming columns
 colnames(k) <- c("Variable", "Full", "Subset", "lower.con", "upper.con")
-shan.div.model.avg <- k 
 ```
+
 ####Model avg estimate plot
 ```{r}
 #plotting estimates!
-shan.averaged.plot <- shan.div.model.avg  %>% 
+shan.averaged.plot <- k %>% 
   ggplot(aes(x = Subset, y = Variable)) +
   geom_point(size = 2.5) +
   theme_bw() +
@@ -380,12 +399,13 @@ shan.averaged.plot
 gridExtra::grid.arrange(rich.averaged.plot 
 , shan.averaged.plot, even.averaged.plot, tbi.averaged.plot , nrow = 2, ncol = 2)
 ```
-#T tests
+
+#T \tests
 ##Full dataset
 ```{r}
-t <- tpaired.krandtest(pivot_first_m, pivot_last_m, nperm = 999, list.all = FALSE)
+t <- tpaired.krandtest(pivot_first_m, pivot_last_m, nperm = 9999, list.all = FALSE)
 summary(z)
-
+View(t[[1]])
 full.t <- t[[1]]
 species <- rownames(full.t)
 species <- as.data.frame(species)
@@ -478,6 +498,7 @@ paired.full <- bind_cols(full.t, o)
 paired.full.HC <- paired.full %>% 
     rename("p.holm.adj" = "y")
 ```
+
 ###Mimico Creek
 ```{r}
 Matrix.MC.first <- Matrix_site_first %>% filter(Watershed == "Mimico Creek") 
@@ -540,7 +561,6 @@ Matrix.2.first <- Matrix.2.first[,c(4:ncol(Matrix.2.first))]
 Matrix.2.last <- Matrix_site_last %>% filter(Strahler == "2") 
 Matrix.2.last <- Matrix.2.last[,c(4:ncol(Matrix.2.last))]
 
-#not enough observations to run this since only one observation
 t <- tpaired.krandtest(Matrix.2.first, Matrix.2.last, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -565,7 +585,6 @@ Matrix.3.first <- Matrix.3.first[,c(4:ncol(Matrix.3.first))]
 Matrix.3.last <- Matrix_site_last %>% filter(Strahler == "3") 
 Matrix.3.last <- Matrix.3.last[,c(4:ncol(Matrix.3.last))]
 
-#not enough observations to run this since only one observation
 t <- tpaired.krandtest(Matrix.3.first, Matrix.3.last, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -590,7 +609,6 @@ Matrix.4.first <- Matrix.4.first[,c(4:ncol(Matrix.4.first))]
 Matrix.4.last <- Matrix_site_last %>% filter(Strahler == "4") 
 Matrix.4.last <- Matrix.4.last[,c(4:ncol(Matrix.4.last))]
 
-#not enough observations to run this since only one observation
 t <- tpaired.krandtest(Matrix.4.first, Matrix.4.last, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -614,7 +632,6 @@ Matrix.5.first <- Matrix.5.first[,c(4:ncol(Matrix.5.first))]
 Matrix.5.last <- Matrix_site_last %>% filter(Strahler == "5") 
 Matrix.5.last <- Matrix.5.last[,c(4:ncol(Matrix.5.last))]
 
-#t tests
 t <- tpaired.krandtest(Matrix.5.first, Matrix.5.last, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -629,17 +646,40 @@ paired.full <- bind_cols(full.t, o)
 paired.full.5 <- paired.full %>% 
     rename("p.holm.adj" = "y")
 ```
-##TBI significant 
+###6
+```{r}
+Matrix.6.first <- Matrix_site_first %>% filter(Strahler == "6") 
+Matrix.6.first <- Matrix.6.first[,c(4:ncol(Matrix.6.first))]
+
+#second time period
+Matrix.6.last <- Matrix_site_last %>% filter(Strahler == "6") 
+Matrix.6.last <- Matrix.6.last[,c(4:ncol(Matrix.6.last))]
+
+t <- tpaired.krandtest(Matrix.6.first, Matrix.6.last, nperm = 9999, list.all = FALSE)
+full.t <- t[[1]]
+species <- rownames(full.t)
+species <- as.data.frame(species)
+
+p.adjust(t$t.tests$p.perm,method = "holm")
+y <- p.adjust(t$t.tests$p.perm,method = "holm")
+o <- as.data.frame(y)
+p <- bind_cols(species, o)
+paired.full <- bind_cols(full.t, o)
+
+paired.full.6 <- paired.full %>% 
+    rename("p.holm.adj" = "y")
+
+```
+
+##High TBI 
 ###All
 ```{r}
-#selecting signif TBI sites
 Matrix.signif.first <- Matrix_site_first %>% filter(StationName == "DN011WM"| StationName =="HL005WM" |StationName == "MM002WM"|StationName == "RG019WM"|StationName == "DN010WMb"| StationName == "EC001WM" | StationName == "EC010WM")
 Matrix.signif.first  <- Matrix.signif.first[,c(4:ncol(Matrix.signif.first))]
 
 Matrix.signif.last <- Matrix_site_last %>%  filter(StationName == "DN011WM"| StationName =="HL005WM" |StationName == "MM002WM"|StationName == "RG019WM"|StationName == "DN010WMb"| StationName == "EC001WM" | StationName == "EC010WM" )
 Matrix.signif.last  <- Matrix.signif.last[,c(4:ncol(Matrix.signif.last))]
 
-#paired t tests
 t <- tpaired.krandtest(Matrix.signif.first, Matrix.signif.last, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -654,16 +694,15 @@ paired.full <- bind_cols(full.t, o)
 paired.full <- paired.full %>% 
     rename("p.holm.adj" = "y")
 ```
+
 ###Gains
 ```{r}
-#selecting gain sites
 Matrix.signif.first.gains <- Matrix_site_first %>% filter(StationName == "DN011WM"| StationName =="HL005WM" |StationName == "MM002WM" | StationName == "EC010WM")
 Matrix.signif.first.gains  <- Matrix.signif.first.gains[,c(4:ncol(Matrix.signif.first.gains))]
 
 Matrix.signif.last.gains <- Matrix_site_last %>%  filter(StationName == "DN011WM"| StationName =="HL005WM" |StationName == "MM002WM" | StationName == "EC010WM")
 Matrix.signif.last.gains  <- Matrix.signif.last.gains[,c(4:ncol(Matrix.signif.last.gains))]
 
-#paired t tests
 t <- tpaired.krandtest(Matrix.signif.first.gains, Matrix.signif.last.gains, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -678,16 +717,15 @@ paired.gains<- bind_cols(full.t, o)
 paired.gains <- paired.gains %>% 
     rename("p.holm.adj" = "y")
 ```
+
 ###Losses
 ```{r}
-#selecting loss sites
 Matrix.signif.first.losses <- Matrix_site_first %>% filter(StationName == "DN011WM"| StationName =="HL005WM" |StationName == "MM002WM")
 Matrix.signif.first.losses  <- Matrix.signif.first.losses[,c(4:ncol(Matrix.signif.first.losses))]
 
 Matrix.signif.last.losses <- Matrix_site_last %>%  filter(StationName == "DN011WM"| StationName =="HL005WM" |StationName == "MM002WM")
 Matrix.signif.last.losses  <- Matrix.signif.last.losses[,c(4:ncol(Matrix.signif.last.losses))]
 
-#paired t tests
 t <- tpaired.krandtest(Matrix.signif.first.losses, Matrix.signif.last.losses, nperm = 9999, list.all = FALSE)
 full.t <- t[[1]]
 species <- rownames(full.t)
@@ -702,23 +740,23 @@ paired.losses <- bind_cols(full.t, o)
 paired.losses <- paired.losses %>% 
     rename("p.holm.adj" = "y")
 ```
+
 #TBI presence absence
 ```{r}
-#analzing only with p/a data, difference is in the pa.tr part of code
 pa <- TBI(pivot_first_m, pivot_last_m, method = "%difference", pa.tr = TRUE, BCD = TRUE, nperm = 9999, test.BC = TRUE) 
 pa
 pa[[1]]
+
+plot(pa)
 
 pa.data <- pa[1]
 
 TBI.pa <- as.data.frame(pa[1])
 p.TBI.pa <- as.data.frame(pa[2])
+p.adjusted.pa <- as.data.frame(pa[3])
 BCD.pa <- as.data.frame(pa[4])
 
-TBI.results.pa <- cbind(Stations, TBI.pa, p.TBI.pa, BCD.pa)
+TBI.results.pa <- cbind(Stations, TBI.pa, p.TBI.pa, p.adjusted.pa, BCD.pa)
 
-colnames(TBI.results.pa) <- c("Station", "TBI", "p.TBI", "B/(2A+B+C)", "C/(2A+B+C)", "D=(B+C)/(2A+B+B)", "Change" )
-
-View(TBI.results.pa)
+colnames(TBI.results.pa) <- c("Station", "TBI", "p.TBI", "p.adjusted", "Losses", "Gains", "D=(B+C)/(2A+B+B)", "Change" )
 ```
-
